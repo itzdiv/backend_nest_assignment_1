@@ -268,13 +268,19 @@ export class ApplicationService {
         title: app.job?.title,
         company_name: app.job?.company?.name,
       },
-      comments: (app.comments || [])
-        .map((c) => ({
+      comments: (() => {
+        const allComments = app.comments || [];
+
+        /* Map each comment to a safe response shape */
+        const mappedComments = allComments.map((c) => ({
           id: c.id,
           comment: c.comment,
           visible_to_candidate: c.visible_to_candidate,
           created_at: c.created_at,
-        })),
+        }));
+
+        return mappedComments;
+      })(),
     }));
 
     return paginate(data, total, page, limit);
@@ -432,12 +438,15 @@ export class ApplicationService {
       order: { created_at: 'ASC' },
     });
 
-    return comments.map((c) => ({
+    /* Map to safe response shape with commenter email */
+    const data = comments.map((c) => ({
       id: c.id,
       comment: c.comment,
       visible_to_candidate: c.visible_to_candidate,
       user_email: c.user?.email,
       created_at: c.created_at,
     }));
+
+    return data;
   }
 }
