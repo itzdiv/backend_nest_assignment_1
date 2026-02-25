@@ -138,10 +138,10 @@ export class CompanyService {
     }
 
     /*
-      Object.assign merges dto fields into existing entity.
+      Use TypeORM's merge() to merge dto fields into existing entity.
       Only fields present in dto will overwrite.
     */
-    Object.assign(company, dto);
+    this.companyRepository.merge(company, dto);
 
     await this.companyRepository.save(company);
 
