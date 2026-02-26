@@ -31,7 +31,7 @@ import {
   LessThanOrEqual — TypeORM operator for WHERE ... <= value.
 */
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, IsNull, LessThanOrEqual } from 'typeorm';
+import { Repository, DataSource, IsNull } from 'typeorm';
 
 /* Entity classes for job_listings and question_banks tables */
 import { JobListing } from 'src/db/entities/job-listing.entity';
@@ -105,10 +105,8 @@ export class JobService {
           throw new NotFoundException('Question bank not found');
         }
 
-        /* Deep copy to prevent reference issues */
-        screeningQuestions = JSON.parse(
-          JSON.stringify(qb.questions_json),
-        );
+        /* Snapshot questions — already a plain JS object from JSONB column */
+        screeningQuestions = qb.questions_json;
       }
 
       /* Create job listing entity */
@@ -253,19 +251,13 @@ export class JobService {
   async update(companyId: string, jobId: string, dto: UpdateJobDto) {
     const job = await this.findOne(companyId, jobId);
 
-    /* Merge only provided fields into existing entity */
-    if (dto.title !== undefined) job.title = dto.title;
-    if (dto.description !== undefined) job.description = dto.description;
-    if (dto.requirements !== undefined) job.requirements = dto.requirements;
-    if (dto.salary_range !== undefined) job.salary_range = dto.salary_range;
-    if (dto.location !== undefined) job.location = dto.location;
-    if (dto.employment_type !== undefined) job.employment_type = dto.employment_type;
-    if (dto.application_mode !== undefined) job.application_mode = dto.application_mode as ApplicationMode;
-    if (dto.visibility !== undefined) job.visibility = dto.visibility as JobVisibility;
-    if (dto.application_deadline !== undefined) {
-      job.application_deadline = new Date(dto.application_deadline);
+    /* Build update payload, converting deadline string to Date if provided */
+    const updates: Record<string, any> = { ...dto };
+    if (updates.application_deadline) {
+      updates.application_deadline = new Date(updates.application_deadline);
     }
 
+    this.jobRepository.merge(job, updates);
     await this.jobRepository.save(job);
 
     return job;
@@ -332,20 +324,20 @@ export class JobService {
   private async autoCloseExpiredJobs(companyId?: string) {
     const now = new Date();
 
-    await this.jobRepository
+    const query = this.jobRepository
       .createQueryBuilder()
       .update(JobListing)
       .set({ status: JobStatus.CLOSED })
       .where('status = :status', { status: JobStatus.ACTIVE })
       .andWhere('application_deadline IS NOT NULL')
       .andWhere('application_deadline <= :now', { now })
-      .andWhere('deleted_at IS NULL')
-      .andWhere(
-        companyId
-          ? 'company_id = :companyId'
-          : '1=1',
-        { companyId },
-      )
-      .execute();
+      .andWhere('deleted_at IS NULL');
+
+    /* Scope to specific company if companyId provided */
+    if (companyId) {
+      query.andWhere('company_id = :companyId', { companyId });
+    }
+
+    await query.execute();
   }
 }

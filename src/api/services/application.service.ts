@@ -51,8 +51,7 @@ import { ApplicationComment } from 'src/db/entities/application-comment.entity';
 import { ApplicationStatus, JobStatus } from 'src/db/enums';
 
 /* Zod DTO types */
-import { CreateApplicationDto } from 'src/zod/application.zod';
-import { CreateCommentDto } from 'src/zod/application.zod';
+import { CreateApplicationDto, CreateCommentDto } from 'src/zod/application.zod';
 
 /* Pagination helper */
 import { paginate } from 'src/libs/pagination';
@@ -160,8 +159,8 @@ export class ApplicationService {
         company: { id: job.company.id } as any, // denormalized company_id
         user: { id: userId } as any,
         resume: { id: dto.resume_id } as any,
-        answers_json: dto.answers_json || undefined,
-        video_url: dto.video_url || undefined,
+        answers_json: dto.answers_json,
+        video_url: dto.video_url,
         status: ApplicationStatus.APPLIED,
       });
 
@@ -268,13 +267,12 @@ export class ApplicationService {
         title: app.job?.title,
         company_name: app.job?.company?.name,
       },
-      comments: (app.comments || [])
-        .map((c) => ({
-          id: c.id,
-          comment: c.comment,
-          visible_to_candidate: c.visible_to_candidate,
-          created_at: c.created_at,
-        })),
+      comments: (app.comments || []).map((c) => ({
+        id: c.id,
+        comment: c.comment,
+        visible_to_candidate: c.visible_to_candidate,
+        created_at: c.created_at,
+      })),
     }));
 
     return paginate(data, total, page, limit);

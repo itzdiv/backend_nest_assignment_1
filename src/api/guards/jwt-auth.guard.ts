@@ -78,7 +78,8 @@ export class JwtAuthGuard implements CanActivate {
       }
     */
     const user = await this.userRepository.findOne({
-      where: { id: decoded.user_id },
+    where: { id: decoded.user_id },
+    select: ['id', 'email', 'is_active'], // ← Safe change
     });
 
     if (!user) {
