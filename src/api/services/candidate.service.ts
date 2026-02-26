@@ -116,8 +116,8 @@ export class CandidateService {
       throw new NotFoundException('Candidate profile not found');
     }
 
-    /* Merge incoming fields into existing entity */
-    Object.assign(profile, dto);
+    /* Use TypeORM's merge() to update entity fields */
+    this.profileRepository.merge(profile, dto);
 
     await this.profileRepository.save(profile);
 
