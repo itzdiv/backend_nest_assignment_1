@@ -39,6 +39,9 @@ import {
 /* Service containing application business logic */
 import { ApplicationService } from '../services/application.service';
 
+/* Resume service for generating signed download URLs */
+import { ResumeService } from '../services/resume.service';
+
 /* Guards */
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CompanyMembershipGuard } from '../guards/company-membership.guard';
@@ -144,6 +147,7 @@ export class CandidateApplicationController {
 export class CompanyApplicationController {
   constructor(
     private readonly applicationService: ApplicationService,
+    private readonly resumeService: ResumeService,
   ) {}
 
   /*
@@ -209,6 +213,36 @@ export class CompanyApplicationController {
       req.user.id,
       body,
     );
+  }
+
+  /*
+    GET /api/v1/companies/:companyId/applications/:applicationId/resume
+    View the resume attached to an application.
+    Generates a signed download URL (15-minute expiry).
+    All company members can view.
+  */
+  @UseGuards(JwtAuthGuard, CompanyMembershipGuard)
+  @Get(':applicationId/resume')
+  async getResume(
+    @Param('companyId') companyId: string,
+    @Param('applicationId') applicationId: string,
+  ) {
+    const resume = await this.applicationService.getApplicationResume(
+      companyId,
+      applicationId,
+    );
+
+    const signedUrl = await this.resumeService.getDownloadUrl(
+      resume.storage_key,
+    );
+
+    return {
+      download_url: signedUrl,
+      filename: resume.original_filename,
+      mime_type: resume.mime_type,
+      file_size_bytes: resume.file_size_bytes,
+      expires_in: 900,
+    };
   }
 
   /*

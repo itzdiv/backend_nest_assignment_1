@@ -316,7 +316,7 @@ export class ApplicationService {
       updated_at: app.updated_at,
       candidate_email: app.user?.email,
       job_title: app.job?.title,
-      resume_url: app.resume?.file_url,
+      resume_url: app.resume?.storage_key,
       comments_count: app.comments?.length || 0,
     }));
 
@@ -437,5 +437,39 @@ export class ApplicationService {
       user_email: c.user?.email,
       created_at: c.created_at,
     }));
+  }
+
+  /*
+    getApplicationResume — fetches the resume attached to an application.
+
+    Validates the application belongs to the given company.
+    Returns the resume entity with its storage_key so the
+    controller can generate a signed download URL.
+
+    @param companyId     — UUID of the company.
+    @param applicationId — UUID of the application.
+    @returns Resume entity.
+    @throws NotFoundException if application or resume not found.
+  */
+  async getApplicationResume(companyId: string, applicationId: string) {
+    const application = await this.applicationRepository.findOne({
+      where: {
+        id: applicationId,
+        company: { id: companyId },
+      },
+      relations: ['resume'],
+    });
+
+    if (!application) {
+      throw new NotFoundException('Application not found');
+    }
+
+    if (!application.resume) {
+      throw new NotFoundException(
+        'No resume attached to this application',
+      );
+    }
+
+    return application.resume;
   }
 }
