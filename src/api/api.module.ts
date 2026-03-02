@@ -56,6 +56,7 @@ import { JobService } from './services/job.service';
 import { CandidateService } from './services/candidate.service';
 import { ResumeService } from './services/resume.service';
 import { ApplicationService } from './services/application.service';
+import { SupabaseStorageService } from './services/supabase-storage.service';
 
 /* ──────────────────────────────────────────────
    Guard imports — protect routes
@@ -132,6 +133,7 @@ import { RoleGuard } from './guards/role.guard';
     CandidateService,
     ResumeService,
     ApplicationService,
+    SupabaseStorageService,
 
     /* Guards — registered as providers so NestJS can inject dependencies */
     JwtAuthGuard,

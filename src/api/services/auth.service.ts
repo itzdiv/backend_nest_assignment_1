@@ -52,12 +52,12 @@ export class AuthService{
 
             }
             //work when user exist only
-            const password=await bcrypt.compare(
+            const isPasswordValid=await bcrypt.compare(
                 data.password,
                 user.password_hash,
             );
 
-            if(!password){
+            if(!isPasswordValid){
                 throw new UnauthorizedException("Invalide Credentials");
             }
 
