@@ -187,4 +187,16 @@ export class PublicJobController {
   ) {
     return this.jobService.findPublicJobs(query.page, query.limit);
   }
+
+  /*
+    GET /api/v1/jobs/:jobId
+    Returns a single PUBLIC job by ID.
+    Allows ACTIVE and CLOSED statuses — candidates can still
+    view details of a job after its application deadline passes.
+    No authentication required.
+  */
+  @Get(':jobId')
+  async findPublicJobById(@Param('jobId') jobId: string) {
+    return this.jobService.findPublicJobById(jobId);
+  }
 }

@@ -31,7 +31,7 @@ import {
   LessThanOrEqual — TypeORM operator for WHERE ... <= value.
 */
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, IsNull } from 'typeorm';
+import { Repository, DataSource, IsNull, In } from 'typeorm';
 
 /* Entity classes for job_listings and question_banks tables */
 import { JobListing } from 'src/db/entities/job-listing.entity';
@@ -233,11 +233,55 @@ export class JobService {
       employment_type: job.employment_type,
       application_mode: job.application_mode,
       application_deadline: job.application_deadline,
-      company_name: job.company?.name,
+      company_name: job.company?.name ?? null,
+      company_logo_url: job.company?.logo_url ?? null,
       created_at: job.created_at,
     }));
 
     return paginate(data, total, page, limit);
+  }
+
+  /*
+    findPublicJobById — returns a single PUBLIC job by ID.
+    Allows ACTIVE and CLOSED statuses so candidates can
+    still view a job after its deadline has passed.
+
+    @param jobId — UUID of the job.
+    @returns job detail with company name and logo.
+  */
+  async findPublicJobById(jobId: string) {
+    const job = await this.jobRepository.findOne({
+      where: {
+        id: jobId,
+        visibility: JobVisibility.PUBLIC,
+        status: In([JobStatus.ACTIVE, JobStatus.CLOSED]),
+        deleted_at: IsNull(),
+      },
+      relations: ['company'],
+    });
+
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    return {
+      id: job.id,
+      title: job.title,
+      description: job.description,
+      requirements: job.requirements,
+      salary_range: job.salary_range,
+      location: job.location,
+      employment_type: job.employment_type,
+      application_mode: job.application_mode,
+      visibility: job.visibility,
+      status: job.status,
+      application_deadline: job.application_deadline,
+      screening_questions_json: job.screening_questions_json,
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+      company_name: job.company?.name ?? null,
+      company_logo_url: job.company?.logo_url ?? null,
+    };
   }
 
   /*

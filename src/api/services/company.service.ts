@@ -96,6 +96,36 @@ export class CompanyService {
   }
 
   /*
+    getMyCompanies — returns all ACTIVE company memberships
+    for the authenticated user with company summary fields.
+
+    @param userId — authenticated user id from JWT.
+    @returns list of companies for selector/dashboard.
+  */
+  async getMyCompanies(userId: string) {
+    const memberships = await this.companyMemberRepository.find({
+      where: {
+        user: { id: userId },
+        status: MemberStatus.ACTIVE,
+        company: { deleted_at: IsNull() },
+      },
+      relations: ['company'],
+      order: { created_at: 'DESC' },
+    });
+
+    return {
+      data: memberships.map((membership) => ({
+        membership_id: membership.id,
+        company_id: membership.company.id,
+        company_name: membership.company.name,
+        company_logo_url: membership.company.logo_url,
+        role: membership.role,
+        status: membership.status,
+      })),
+    };
+  }
+
+  /*
     getCompanyById — fetches a single company by ID.
     Excludes soft-deleted companies (deleted_at IS NULL).
 

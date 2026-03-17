@@ -71,6 +71,17 @@ export class CompanyController {
   }
 
   /*
+    GET /api/v1/companies/me
+    Get all companies where the authenticated user is an ACTIVE member.
+    Useful for company switcher/dashboard in frontend.
+  */
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async getMyCompanies(@Req() req) {
+    return this.companyService.getMyCompanies(req.user.id);
+  }
+
+  /*
     GET /api/v1/companies/:companyId
     Get company details.
     Requires: JWT + active company membership.

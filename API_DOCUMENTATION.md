@@ -465,6 +465,46 @@ Content-Type: application/json
 
 ---
 
+#### GET `/api/v1/companies/me`
+
+**Description:** Get all companies where the authenticated user is an ACTIVE member.
+
+**Who uses this:** Any authenticated user.
+
+**Guards:** JwtAuthGuard
+
+**Frontend scenario:** Right after login, frontend calls this endpoint once to populate company selector/switcher and show role badges per company.
+
+**Success Response (200):**
+```json
+{
+  "data": [
+    {
+      "membership_id": "membership-uuid-...",
+      "company_id": "company-uuid-...",
+      "company_name": "TechCorp",
+      "company_logo_url": "https://cdn.example.com/techcorp-logo.png",
+      "role": "OWNER",
+      "status": "ACTIVE"
+    },
+    {
+      "membership_id": "membership-uuid-2-...",
+      "company_id": "company-uuid-2-...",
+      "company_name": "DesignHub",
+      "company_logo_url": null,
+      "role": "RECRUITER",
+      "status": "ACTIVE"
+    }
+  ]
+}
+```
+
+**Notes:**
+- Returns only ACTIVE memberships.
+- Soft-deleted companies are excluded.
+
+---
+
 #### GET `/api/v1/companies/:companyId`
 
 **Description:** Get company details.
@@ -524,7 +564,7 @@ Content-Type: application/json
 
 ### 8.3 Company Members
 
-#### POST `/api/v1/companies/:companyId/members/invite`
+#### POST `/api/v1/companies/:companyId/members`
 
 **Description:** Invite a registered user to join the company.
 
@@ -545,7 +585,7 @@ Content-Type: application/json
 
 **Example Request:**
 ```json
-POST /api/v1/companies/a1b2c3d4-.../members/invite
+POST /api/v1/companies/a1b2c3d4-.../members
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -561,11 +601,11 @@ Content-Type: application/json
   "id": "membership-uuid-...",
   "email": "recruiter@example.com",
   "role": "RECRUITER",
-  "status": "INVITED"
+  "status": "ACTIVE"
 }
 ```
 
-**Note:** In the current implementation, the invited member's status is set to `INVITED` but the `CompanyMembershipGuard` checks for `ACTIVE` status. This means the invited user needs their status to be manually set to `ACTIVE` (or the invite flow should be updated) before they can access company resources.
+**Note:** In the current implementation, invited users are created directly with `ACTIVE` status, so they can access company resources immediately.
 
 **Error Responses:**
 | Code | Condition |
@@ -661,7 +701,7 @@ Content-Type: application/json
 
 ---
 
-#### PATCH `/api/v1/companies/:companyId/members/:memberId/revoke`
+#### DELETE `/api/v1/companies/:companyId/members/:memberId`
 
 **Description:** Revoke a member's access (sets status to REVOKED).
 
@@ -686,7 +726,7 @@ Content-Type: application/json
 
 ---
 
-#### PATCH `/api/v1/companies/:companyId/members/transfer/:memberId`
+#### POST `/api/v1/companies/:companyId/members/:memberId/transfer-ownership`
 
 **Description:** Transfer company ownership to another ACTIVE member.
 
@@ -1047,6 +1087,7 @@ Content-Type: application/json
       "application_mode": "QUESTIONNAIRE",
       "application_deadline": "2025-04-30T23:59:59.000Z",
       "company_name": "TechCorp",
+      "company_logo_url": "https://cdn.example.com/techcorp-logo.png",
       "created_at": "2025-02-20T14:00:00.000Z"
     }
   ],
@@ -1063,8 +1104,54 @@ Content-Type: application/json
 - Job title, description, requirements, salary, location, employment type
 - Application mode (so frontend knows which form to show)
 - Application deadline (so frontend can show "X days left")
-- Company name (for branding)
-- **NOT shown:** company internal data, private jobs, draft/closed jobs
+- Company name and logo (for branding)
+- **NOT shown:** company internal data, private jobs, draft jobs
+
+---
+
+#### GET `/api/v1/jobs/:jobId`
+
+**Description:** Get the full details of a single public job by its ID.
+
+**Who uses this:** **Anyone** — no authentication required. Used when a candidate clicks on a job listing.
+
+**Guards:** None
+
+**Visibility rules:**
+
+| Job Status | Job Visibility | Result |
+|------------|---------------|--------|
+| `ACTIVE` | `PUBLIC` | ✅ 200 — returned |
+| `CLOSED` | `PUBLIC` | ✅ 200 — returned (deadline passed, still viewable) |
+| `DRAFT` | `PUBLIC` | ❌ 404 — not returned |
+| Any | `PRIVATE` | ❌ 404 — not returned |
+| Soft-deleted | Any | ❌ 404 — not returned |
+
+**Path Parameter:** `:jobId` — UUID of the job.
+
+**Success Response (200):**
+```json
+{
+  "id": "job-uuid-...",
+  "title": "Senior Backend Engineer",
+  "description": "We are looking for...",
+  "requirements": "5+ years Node.js...",
+  "salary_range": "15-25 LPA",
+  "location": "Bangalore (Hybrid)",
+  "employment_type": "FULL_TIME",
+  "application_mode": "QUESTIONNAIRE",
+  "visibility": "PUBLIC",
+  "status": "ACTIVE",
+  "application_deadline": "2025-04-30T23:59:59.000Z",
+  "screening_questions_json": { "questions": [] },
+  "created_at": "2025-02-20T14:00:00.000Z",
+  "updated_at": "2025-03-01T10:00:00.000Z",
+  "company_name": "TechCorp",
+  "company_logo_url": "https://cdn.example.com/techcorp-logo.png"
+}
+```
+
+**Error:** `404` if job is not found, is DRAFT, PRIVATE, or soft-deleted.
 
 ---
 
@@ -1135,15 +1222,15 @@ Content-Type: application/json
 
 **Guards:** JwtAuthGuard
 
-**Frontend scenario:** On "My Resumes" page, candidate clicks "Upload Resume", provides a title and file URL (uploaded to cloud storage first, then URL passed here). Can mark as primary.
+**Frontend scenario:** On "My Resumes" page, candidate clicks "Upload Resume", uploads a file directly (multipart upload), optionally adds a title, and can mark as primary.
 
-**Request Body:**
+**Request Body (`multipart/form-data`):**
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `title` | string | — | `null` | Human-readable label (e.g. "Backend Resume 2025") |
-| `file_url` | string | ✅ | — | URL to the uploaded file (PDF/DOC) |
-| `is_primary` | boolean | — | `false` | If `true`, all other resumes are demoted (transaction) |
+| `file` | binary | ✅ | — | Resume file upload (PDF/DOC/etc.) |
+| `title` | string | — | `original file name` | Human-readable label (e.g. "Backend Resume 2025") |
+| `is_primary` | string | — | `false` | Send `'true'` to mark uploaded resume as primary |
 
 **Note on `is_primary`:** Only ONE resume per user can be primary. When `is_primary: true` is sent, the system runs a transaction: (1) set all user's other resumes to `is_primary = false`, (2) create new resume with `is_primary = true`.
 
@@ -1162,6 +1249,28 @@ Content-Type: application/json
 **Query:** `?page=1&limit=10`
 
 **Frontend scenario:** "My Resumes" page — shows list with title, file link, primary badge.
+
+---
+
+#### GET `/api/v1/candidate/resumes/:resumeId/download`
+
+**Description:** Generate a short-lived signed URL to download a specific resume.
+
+**Who uses this:** Candidate.
+
+**Guards:** JwtAuthGuard
+
+**Frontend scenario:** Candidate clicks a resume row/card to download the file.
+
+**Success Response (200):**
+```json
+{
+  "download_url": "https://...signed-url...",
+  "filename": "resume.pdf",
+  "mime_type": "application/pdf",
+  "expires_in": 900
+}
+```
 
 ---
 
@@ -1435,6 +1544,29 @@ Content-Type: application/json
 
 ---
 
+#### GET `/api/v1/companies/:companyId/applications/:applicationId/resume`
+
+**Description:** Get a short-lived signed URL for the resume attached to an application.
+
+**Who uses this:** Any company member.
+
+**Guards:** JwtAuthGuard + CompanyMembershipGuard
+
+**Frontend scenario:** Recruiter opens an application and clicks "View Resume".
+
+**Success Response (200):**
+```json
+{
+  "download_url": "https://...signed-url...",
+  "filename": "resume.pdf",
+  "mime_type": "application/pdf",
+  "file_size_bytes": 123456,
+  "expires_in": 900
+}
+```
+
+---
+
 ### 8.11 Application Comments
 
 Comments allow company members to leave internal notes or candidate-visible feedback on applications.
@@ -1553,7 +1685,10 @@ Content-Type: application/json
 |--------|------|----------|-------------|
 | `user_id` | FK → users | NO | Owner of this resume |
 | `title` | varchar(255) | YES | Label like "Backend Resume 2025" |
-| `file_url` | text | NO | URL to the uploaded file (S3, Supabase Storage, etc.) |
+| `storage_key` | text | NO | Internal object key in storage bucket (e.g. `userId/uuid.pdf`) |
+| `original_filename` | varchar(255) | NO | Original client-side file name |
+| `mime_type` | varchar(100) | NO | Uploaded file MIME type |
+| `file_size_bytes` | int | NO | Uploaded file size in bytes |
 | `is_primary` | boolean | NO | Default `false`. Only one per user can be `true`. |
 
 ### Company
@@ -1636,40 +1771,44 @@ Content-Type: application/json
 | 1 | POST | `/api/v1/auth/register` | — | — | Register new user |
 | 2 | POST | `/api/v1/auth/login` | — | — | Login, get JWT |
 | 3 | POST | `/api/v1/companies` | JWT | — | Create company (become OWNER) |
-| 4 | GET | `/api/v1/companies/:companyId` | JWT+Membership | Any member | View company details |
-| 5 | PATCH | `/api/v1/companies/:companyId` | JWT+Membership+Role | OWNER, ADMIN | Update company |
-| 6 | POST | `/api/v1/companies/:companyId/members/invite` | JWT+Membership+Role | OWNER, ADMIN | Invite member |
-| 7 | GET | `/api/v1/companies/:companyId/members` | JWT+Membership | Any member | List members |
-| 8 | PATCH | `/api/v1/companies/:companyId/members/:memberId/role` | JWT+Membership+Role | OWNER, ADMIN | Change role |
-| 9 | PATCH | `/api/v1/companies/:companyId/members/:memberId/revoke` | JWT+Membership+Role | OWNER, ADMIN | Revoke member |
-| 10 | PATCH | `/api/v1/companies/:companyId/members/transfer/:memberId` | JWT+Membership+Role | OWNER | Transfer ownership |
-| 11 | POST | `/api/v1/companies/:companyId/question-banks` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Create question bank |
-| 12 | GET | `/api/v1/companies/:companyId/question-banks` | JWT+Membership | Any member | List question banks |
-| 13 | GET | `/api/v1/companies/:companyId/question-banks/:qbId` | JWT+Membership | Any member | View question bank |
-| 14 | PATCH | `/api/v1/companies/:companyId/question-banks/:qbId` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Update question bank |
-| 15 | POST | `/api/v1/companies/:companyId/jobs` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Create job |
-| 16 | GET | `/api/v1/companies/:companyId/jobs` | JWT+Membership | Any member | List company jobs |
-| 17 | GET | `/api/v1/companies/:companyId/jobs/:jobId` | JWT+Membership | Any member | View job details |
-| 18 | PATCH | `/api/v1/companies/:companyId/jobs/:jobId` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Update job |
-| 19 | PATCH | `/api/v1/companies/:companyId/jobs/:jobId/status` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Change job status |
-| 20 | DELETE | `/api/v1/companies/:companyId/jobs/:jobId` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Soft-delete job |
-| 21 | GET | `/api/v1/jobs` | — | — | Browse public active jobs |
-| 22 | POST | `/api/v1/candidate/profile` | JWT | — | Create candidate profile |
-| 23 | GET | `/api/v1/candidate/profile` | JWT | — | View own profile |
-| 24 | PATCH | `/api/v1/candidate/profile` | JWT | — | Update own profile |
-| 25 | POST | `/api/v1/candidate/resumes` | JWT | — | Upload resume |
-| 26 | GET | `/api/v1/candidate/resumes` | JWT | — | List own resumes |
-| 27 | PATCH | `/api/v1/candidate/resumes/:resumeId/primary` | JWT | — | Set resume as primary |
-| 28 | DELETE | `/api/v1/candidate/resumes/:resumeId` | JWT | — | Delete resume |
-| 29 | POST | `/api/v1/candidate/applications` | JWT | — | Apply to a job |
-| 30 | GET | `/api/v1/candidate/applications` | JWT | — | View own applications |
-| 31 | PATCH | `/api/v1/candidate/applications/:applicationId/withdraw` | JWT | — | Withdraw application |
-| 32 | GET | `/api/v1/companies/:companyId/applications` | JWT+Membership | Any member | View company applications |
-| 33 | PATCH | `/api/v1/companies/:companyId/applications/:applicationId/status` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Accept/reject app |
-| 34 | POST | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Add comment |
-| 35 | GET | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership | Any member | View comments |
+| 4 | GET | `/api/v1/companies/me` | JWT | — | List my active companies for selector dashboard |
+| 5 | GET | `/api/v1/companies/:companyId` | JWT+Membership | Any member | View company details |
+| 6 | PATCH | `/api/v1/companies/:companyId` | JWT+Membership+Role | OWNER, ADMIN | Update company |
+| 7 | POST | `/api/v1/companies/:companyId/members` | JWT+Membership+Role | OWNER, ADMIN | Invite member |
+| 8 | GET | `/api/v1/companies/:companyId/members` | JWT+Membership | Any member | List members |
+| 9 | PATCH | `/api/v1/companies/:companyId/members/:memberId/role` | JWT+Membership+Role | OWNER, ADMIN | Change role |
+| 10 | DELETE | `/api/v1/companies/:companyId/members/:memberId` | JWT+Membership+Role | OWNER, ADMIN | Revoke member |
+| 11 | POST | `/api/v1/companies/:companyId/members/:memberId/transfer-ownership` | JWT+Membership+Role | OWNER | Transfer ownership |
+| 12 | POST | `/api/v1/companies/:companyId/question-banks` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Create question bank |
+| 13 | GET | `/api/v1/companies/:companyId/question-banks` | JWT+Membership | Any member | List question banks |
+| 14 | GET | `/api/v1/companies/:companyId/question-banks/:qbId` | JWT+Membership | Any member | View question bank |
+| 15 | PATCH | `/api/v1/companies/:companyId/question-banks/:qbId` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Update question bank |
+| 16 | POST | `/api/v1/companies/:companyId/jobs` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Create job |
+| 17 | GET | `/api/v1/companies/:companyId/jobs` | JWT+Membership | Any member | List company jobs |
+| 18 | GET | `/api/v1/companies/:companyId/jobs/:jobId` | JWT+Membership | Any member | View job details |
+| 19 | PATCH | `/api/v1/companies/:companyId/jobs/:jobId` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Update job |
+| 20 | PATCH | `/api/v1/companies/:companyId/jobs/:jobId/status` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Change job status |
+| 21 | DELETE | `/api/v1/companies/:companyId/jobs/:jobId` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Soft-delete job |
+| 22 | GET | `/api/v1/jobs` | — | — | Browse public active jobs |
+| 23 | GET | `/api/v1/jobs/:jobId` | — | — | Get single public job detail (ACTIVE or CLOSED) |
+| 24 | POST | `/api/v1/candidate/profile` | JWT | — | Create candidate profile |
+| 25 | GET | `/api/v1/candidate/profile` | JWT | — | View own profile |
+| 26 | PATCH | `/api/v1/candidate/profile` | JWT | — | Update own profile |
+| 27 | POST | `/api/v1/candidate/resumes` | JWT | — | Upload resume |
+| 28 | GET | `/api/v1/candidate/resumes` | JWT | — | List own resumes |
+| 29 | GET | `/api/v1/candidate/resumes/:resumeId/download` | JWT | — | Get signed resume download URL |
+| 30 | PATCH | `/api/v1/candidate/resumes/:resumeId/primary` | JWT | — | Set resume as primary |
+| 31 | DELETE | `/api/v1/candidate/resumes/:resumeId` | JWT | — | Delete resume |
+| 32 | POST | `/api/v1/candidate/applications` | JWT | — | Apply to a job |
+| 33 | GET | `/api/v1/candidate/applications` | JWT | — | View own applications |
+| 34 | PATCH | `/api/v1/candidate/applications/:applicationId/withdraw` | JWT | — | Withdraw application |
+| 35 | GET | `/api/v1/companies/:companyId/applications` | JWT+Membership | Any member | View company applications |
+| 36 | PATCH | `/api/v1/companies/:companyId/applications/:applicationId/status` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Accept/reject app |
+| 37 | POST | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Add comment |
+| 38 | GET | `/api/v1/companies/:companyId/applications/:applicationId/resume` | JWT+Membership | Any member | Get signed application resume URL |
+| 39 | GET | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership | Any member | View comments |
 
-**Total: 35 endpoints**
+**Total: 39 endpoints**
 
 ---
 
@@ -1680,16 +1819,17 @@ Content-Type: application/json
 ```
 1. Register account          POST /api/v1/auth/register
 2. Login                     POST /api/v1/auth/login       → save token
-3. Create company            POST /api/v1/companies
-4. Invite team members       POST /api/v1/companies/:id/members/invite
-5. Create question bank      POST /api/v1/companies/:id/question-banks
-6. Post a job (DRAFT)        POST /api/v1/companies/:id/jobs
-7. Publish the job           PATCH /api/v1/companies/:id/jobs/:jid/status  { status: "ACTIVE" }
-8. Wait for applications...
-9. View applications         GET /api/v1/companies/:id/applications
-10. Add internal notes       POST /api/v1/companies/:id/applications/:aid/comments
-11. Accept/reject            PATCH /api/v1/companies/:id/applications/:aid/status
-12. Send feedback            POST .../comments { visible_to_candidate: true }
+3. Fetch my companies        GET /api/v1/companies/me
+4. Create company            POST /api/v1/companies
+5. Invite team members       POST /api/v1/companies/:id/members
+6. Create question bank      POST /api/v1/companies/:id/question-banks
+7. Post a job (DRAFT)        POST /api/v1/companies/:id/jobs
+8. Publish the job           PATCH /api/v1/companies/:id/jobs/:jid/status  { status: "ACTIVE" }
+9. Wait for applications...
+10. View applications        GET /api/v1/companies/:id/applications
+11. Add internal notes       POST /api/v1/companies/:id/applications/:aid/comments
+12. Accept/reject            PATCH /api/v1/companies/:id/applications/:aid/status
+13. Send feedback            POST .../comments { visible_to_candidate: true }
 ```
 
 ### Candidate Side (Job Seeker Journey)
