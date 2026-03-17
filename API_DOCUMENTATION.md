@@ -1500,6 +1500,73 @@ Content-Type: application/json
 
 ---
 
+#### GET `/api/v1/companies/:companyId/applications/:applicationId`
+
+**Description:** View full detail for a single application, including the job's screening questions so the frontend can render Q&A pairs alongside the candidate's answers.
+
+**Who uses this:** Any company member.
+
+**Guards:** JwtAuthGuard + CompanyMembershipGuard
+
+**URL Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `companyId` | UUID | The company that owns the job |
+| `applicationId` | UUID | The application to retrieve |
+
+**Frontend scenario:** Recruiter clicks on a row in the applications table to view full application detail, including the candidate's answers displayed alongside the original question text and the candidate's profile information.
+
+**Success Response (200):**
+```json
+{
+  "id": "app-uuid-...",
+  "status": "APPLIED",
+  "answers_json": { "q1": 5, "q2": "NestJS" },
+  "video_url": null,
+  "created_at": "2025-02-20T15:00:00.000Z",
+  "updated_at": "2025-02-20T15:00:00.000Z",
+  "candidate_email": "candidate@example.com",
+  "candidate_name": "John Doe",
+  "candidate_linkedin_url": "https://linkedin.com/in/johndoe",
+  "candidate_portfolio_url": "https://johndoe.dev",
+  "candidate_phone": "+91-9876543210",
+  "job_title": "Senior Backend Engineer",
+  "job_id": "job-uuid-...",
+  "resume_url": "resumes/user-uuid/resume.pdf",
+  "application_mode": "QUESTIONNAIRE",
+  "screening_questions_json": [
+    {
+      "id": "q1",
+      "question": "How many years of Node.js experience?",
+      "type": "number",
+      "is_required": true
+    },
+    {
+      "id": "q2",
+      "question": "Preferred backend framework?",
+      "type": "choice",
+      "options": ["Express", "NestJS", "Fastify", "Koa"],
+      "is_required": true
+    }
+  ]
+}
+```
+
+**Notes:**
+- `candidate_name`, `candidate_linkedin_url`, `candidate_portfolio_url`, and `candidate_phone` are sourced from the candidate's profile. All four fields return `null` if the candidate has not filled in their profile.
+```
+
+**Error Responses:**
+
+| Status | Condition |
+|--------|-----------|
+| 401 | Missing or invalid JWT |
+| 403 | Not a member of this company |
+| 404 | Application not found or belongs to a different company |
+
+---
+
 #### PATCH `/api/v1/companies/:companyId/applications/:applicationId/status`
 
 **Description:** Accept or reject a candidate's application.
@@ -1803,12 +1870,13 @@ Content-Type: application/json
 | 33 | GET | `/api/v1/candidate/applications` | JWT | — | View own applications |
 | 34 | PATCH | `/api/v1/candidate/applications/:applicationId/withdraw` | JWT | — | Withdraw application |
 | 35 | GET | `/api/v1/companies/:companyId/applications` | JWT+Membership | Any member | View company applications |
-| 36 | PATCH | `/api/v1/companies/:companyId/applications/:applicationId/status` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Accept/reject app |
-| 37 | POST | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Add comment |
-| 38 | GET | `/api/v1/companies/:companyId/applications/:applicationId/resume` | JWT+Membership | Any member | Get signed application resume URL |
-| 39 | GET | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership | Any member | View comments |
+| 36 | GET | `/api/v1/companies/:companyId/applications/:applicationId` | JWT+Membership | Any member | View single application detail with screening questions |
+| 37 | PATCH | `/api/v1/companies/:companyId/applications/:applicationId/status` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Accept/reject app |
+| 38 | POST | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Add comment |
+| 39 | GET | `/api/v1/companies/:companyId/applications/:applicationId/resume` | JWT+Membership | Any member | Get signed application resume URL |
+| 40 | GET | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership | Any member | View comments |
 
-**Total: 39 endpoints**
+**Total: 40 endpoints**
 
 ---
 

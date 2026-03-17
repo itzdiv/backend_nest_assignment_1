@@ -440,6 +440,49 @@ export class ApplicationService {
   }
 
   /*
+    getApplicationDetail — fetches a single application with full detail,
+    including the job's screening_questions_json so the frontend can
+    render Q&A pairs alongside candidate answers.
+
+    @param companyId     — UUID of the company.
+    @param applicationId — UUID of the application.
+    @returns Full application detail including screening questions.
+    @throws NotFoundException if application not found or belongs to a different company.
+  */
+  async getApplicationDetail(companyId: string, applicationId: string) {
+    const application = await this.applicationRepository.findOne({
+      where: {
+        id: applicationId,
+        company: { id: companyId },
+      },
+      relations: ['job', 'user', 'user.candidateProfile', 'resume'],
+    });
+
+    if (!application) {
+      throw new NotFoundException('Application not found');
+    }
+
+    return {
+      id: application.id,
+      status: application.status,
+      answers_json: application.answers_json,
+      video_url: application.video_url ?? null,
+      created_at: application.created_at,
+      updated_at: application.updated_at,
+      candidate_email: application.user?.email ?? null,
+      candidate_name: application.user?.candidateProfile?.full_name ?? null,
+      candidate_linkedin_url: application.user?.candidateProfile?.linkedin_url ?? null,
+      candidate_portfolio_url: application.user?.candidateProfile?.portfolio_url ?? null,
+      candidate_phone: application.user?.candidateProfile?.phone ?? null,
+      job_title: application.job?.title ?? null,
+      job_id: application.job?.id ?? null,
+      resume_url: application.resume?.storage_key ?? null,
+      application_mode: application.job?.application_mode ?? null,
+      screening_questions_json: application.job?.screening_questions_json ?? null,
+    };
+  }
+
+  /*
     getApplicationResume — fetches the resume attached to an application.
 
     Validates the application belongs to the given company.

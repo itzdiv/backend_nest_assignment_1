@@ -170,6 +170,24 @@ export class CompanyApplicationController {
   }
 
   /*
+    GET /api/v1/companies/:companyId/applications/:applicationId
+    View full detail for a single application, including the job's
+    screening_questions_json to render Q&A pairs for recruiters.
+    All company members can view.
+  */
+  @UseGuards(JwtAuthGuard, CompanyMembershipGuard)
+  @Get(':applicationId')
+  async getApplicationDetail(
+    @Param('companyId') companyId: string,
+    @Param('applicationId') applicationId: string,
+  ) {
+    return this.applicationService.getApplicationDetail(
+      companyId,
+      applicationId,
+    );
+  }
+
+  /*
     PATCH /api/v1/companies/:companyId/applications/:applicationId/status
     Accept or reject an application.
     OWNER, ADMIN, RECRUITER can change status.
