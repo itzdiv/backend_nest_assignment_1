@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule} from '@nestjs/config';
 import { ApiModule } from './api/api.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [ 
@@ -31,7 +32,9 @@ import { ApiModule } from './api/api.module';
       synchronize: false, // NEVER true in production
       logging: true,      // Keep true while learning
     }),
-    ApiModule,],
+    ApiModule,
+    NotificationsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

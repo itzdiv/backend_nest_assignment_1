@@ -46,6 +46,10 @@ import { JobApplication } from 'src/db/entities/job-application.entity';
 import { JobListing } from 'src/db/entities/job-listing.entity';
 import { Resume } from 'src/db/entities/resume.entity';
 import { ApplicationComment } from 'src/db/entities/application-comment.entity';
+import {
+  NotificationType,
+} from 'src/notifications/notification.entity';
+import { NotificationsService } from 'src/notifications/notifications.service';
 
 /* Enums matching PostgreSQL ENUM types */
 import { ApplicationStatus, JobStatus } from 'src/db/enums';
@@ -77,6 +81,8 @@ export class ApplicationService {
 
     /* DataSource for transactional operations */
     private readonly dataSource: DataSource,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /*
@@ -343,6 +349,7 @@ export class ApplicationService {
         id: applicationId,
         company: { id: companyId },
       },
+      relations: ['job', 'company', 'user'],
     });
 
     if (!application) {
@@ -359,6 +366,34 @@ export class ApplicationService {
     application.status_changed_by = { id: changedBy } as any;
 
     await this.applicationRepository.save(application);
+
+    const notificationType =
+      status === ApplicationStatus.ACCEPTED
+        ? NotificationType.APPLICATION_ACCEPTED
+        : status === ApplicationStatus.REJECTED
+          ? NotificationType.APPLICATION_REJECTED
+          : null;
+
+    if (notificationType) {
+      const jobTitle = application.job?.title ?? 'this job';
+      const companyName = application.company?.name ?? 'the company';
+      const message =
+        notificationType === NotificationType.APPLICATION_ACCEPTED
+          ? `Congratulations! Your application for "${jobTitle}" at ${companyName} was accepted.`
+          : `Your application for "${jobTitle}" at ${companyName} was not selected.`;
+
+      try {
+        await this.notificationsService.create({
+          userId: application.user.id,
+          type: notificationType,
+          message,
+          applicationId: application.id,
+          jobTitle: application.job?.title,
+          companyName: application.company?.name,
+        });
+      } catch {
+      }
+    }
 
     return {
       id: application.id,
@@ -388,6 +423,7 @@ export class ApplicationService {
         id: applicationId,
         company: { id: companyId },
       },
+      relations: ['job', 'company', 'user'],
     });
 
     if (!application) {
@@ -404,6 +440,23 @@ export class ApplicationService {
     });
 
     await this.commentRepository.save(comment);
+
+    if (dto.visible_to_candidate) {
+      const jobTitle = application.job?.title ?? 'this job';
+      const companyName = application.company?.name ?? 'the company';
+
+      try {
+        await this.notificationsService.create({
+          userId: application.user.id,
+          type: NotificationType.APPLICATION_COMMENT,
+          message: `You have new feedback on your application for "${jobTitle}" at ${companyName}.`,
+          applicationId: application.id,
+          jobTitle: application.job?.title,
+          companyName: application.company?.name,
+        });
+      } catch {
+      }
+    }
 
     return {
       id: comment.id,

@@ -29,6 +29,7 @@
    - [8.9 Applications (Candidate-Side)](#89-applications-candidate-side)
    - [8.10 Applications (Company-Side)](#810-applications-company-side)
    - [8.11 Application Comments](#811-application-comments)
+  - [8.12 Notifications](#812-notifications)
 
 ---
 
@@ -1715,6 +1716,67 @@ Content-Type: application/json
 
 ---
 
+### 8.12 Notifications
+
+Notifications are polling-based and scoped to the authenticated user. They are generated when:
+- an application is accepted/rejected by company members
+- a new candidate-visible comment is posted on an application
+
+#### GET `/api/v1/notifications`
+
+**Description:** Get notifications for the authenticated user with pagination and unread count.
+
+**Who uses this:** Authenticated user (candidate-facing usage is the primary flow).
+
+**Guards:** JwtAuthGuard
+
+**Query:** `?page=1&limit=10`
+
+**Success Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "notification-uuid-...",
+      "created_at": "2025-02-21T15:00:00.000Z",
+      "updated_at": "2025-02-21T15:00:00.000Z",
+      "type": "APPLICATION_ACCEPTED",
+      "message": "Congratulations! Your application for \"Senior Backend Engineer\" at TechCorp was accepted.",
+      "application_id": "application-uuid-...",
+      "job_title": "Senior Backend Engineer",
+      "company_name": "TechCorp",
+      "is_read": false
+    }
+  ],
+  "unreadCount": 1,
+  "meta": {
+    "total": 1,
+    "page": 1,
+    "limit": 10,
+    "totalPages": 1
+  }
+}
+```
+
+---
+
+#### PATCH `/api/v1/notifications/read-all`
+
+**Description:** Mark all unread notifications of the authenticated user as read.
+
+**Who uses this:** Authenticated user.
+
+**Guards:** JwtAuthGuard
+
+**Success Response (200):**
+```json
+{
+  "message": "All notifications marked as read"
+}
+```
+
+---
+
 ## Entity Field Reference
 
 ### BaseEntity (inherited by all entities)
@@ -1829,6 +1891,18 @@ Content-Type: application/json
 | `comment` | text | NO | The comment text |
 | `visible_to_candidate` | boolean | NO | Default `false`. If `true`, candidate sees this. |
 
+### Notification
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| `user_id` | FK → users | NO | Recipient user of the notification |
+| `type` | ENUM | NO | `APPLICATION_ACCEPTED`, `APPLICATION_REJECTED`, `APPLICATION_COMMENT` |
+| `message` | text | NO | Notification message text |
+| `application_id` | uuid | YES | Related application ID for deep-linking |
+| `job_title` | varchar(255) | YES | Job title context |
+| `company_name` | varchar(255) | YES | Company name context |
+| `is_read` | boolean | NO | Default `false` |
+
 ---
 
 ## Complete Endpoint Summary
@@ -1875,8 +1949,10 @@ Content-Type: application/json
 | 38 | POST | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership+Role | OWNER, ADMIN, RECRUITER | Add comment |
 | 39 | GET | `/api/v1/companies/:companyId/applications/:applicationId/resume` | JWT+Membership | Any member | Get signed application resume URL |
 | 40 | GET | `/api/v1/companies/:companyId/applications/:applicationId/comments` | JWT+Membership | Any member | View comments |
+| 41 | GET | `/api/v1/notifications` | JWT | — | List notifications with unread count |
+| 42 | PATCH | `/api/v1/notifications/read-all` | JWT | — | Mark all notifications as read |
 
-**Total: 40 endpoints**
+**Total: 42 endpoints**
 
 ---
 
