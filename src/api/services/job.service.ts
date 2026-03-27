@@ -31,7 +31,7 @@ import {
   LessThanOrEqual — TypeORM operator for WHERE ... <= value.
 */
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, IsNull, LessThanOrEqual } from 'typeorm';
+import { Repository, DataSource, IsNull, In } from 'typeorm';
 
 /* Entity classes for job_listings and question_banks tables */
 import { JobListing } from 'src/db/entities/job-listing.entity';
@@ -105,10 +105,8 @@ export class JobService {
           throw new NotFoundException('Question bank not found');
         }
 
-        /* Deep copy to prevent reference issues */
-        screeningQuestions = JSON.parse(
-          JSON.stringify(qb.questions_json),
-        );
+        /* Snapshot questions — already a plain JS object from JSONB column */
+        screeningQuestions = qb.questions_json;
       }
 
       /* Create job listing entity */
@@ -235,11 +233,55 @@ export class JobService {
       employment_type: job.employment_type,
       application_mode: job.application_mode,
       application_deadline: job.application_deadline,
-      company_name: job.company?.name,
+      company_name: job.company?.name ?? null,
+      company_logo_url: job.company?.logo_url ?? null,
       created_at: job.created_at,
     }));
 
     return paginate(data, total, page, limit);
+  }
+
+  /*
+    findPublicJobById — returns a single PUBLIC job by ID.
+    Allows ACTIVE and CLOSED statuses so candidates can
+    still view a job after its deadline has passed.
+
+    @param jobId — UUID of the job.
+    @returns job detail with company name and logo.
+  */
+  async findPublicJobById(jobId: string) {
+    const job = await this.jobRepository.findOne({
+      where: {
+        id: jobId,
+        visibility: JobVisibility.PUBLIC,
+        status: In([JobStatus.ACTIVE, JobStatus.CLOSED]),
+        deleted_at: IsNull(),
+      },
+      relations: ['company'],
+    });
+
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    return {
+      id: job.id,
+      title: job.title,
+      description: job.description,
+      requirements: job.requirements,
+      salary_range: job.salary_range,
+      location: job.location,
+      employment_type: job.employment_type,
+      application_mode: job.application_mode,
+      visibility: job.visibility,
+      status: job.status,
+      application_deadline: job.application_deadline,
+      screening_questions_json: job.screening_questions_json,
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+      company_name: job.company?.name ?? null,
+      company_logo_url: job.company?.logo_url ?? null,
+    };
   }
 
   /*
@@ -253,19 +295,13 @@ export class JobService {
   async update(companyId: string, jobId: string, dto: UpdateJobDto) {
     const job = await this.findOne(companyId, jobId);
 
-    /* Merge only provided fields into existing entity */
-    if (dto.title !== undefined) job.title = dto.title;
-    if (dto.description !== undefined) job.description = dto.description;
-    if (dto.requirements !== undefined) job.requirements = dto.requirements;
-    if (dto.salary_range !== undefined) job.salary_range = dto.salary_range;
-    if (dto.location !== undefined) job.location = dto.location;
-    if (dto.employment_type !== undefined) job.employment_type = dto.employment_type;
-    if (dto.application_mode !== undefined) job.application_mode = dto.application_mode as ApplicationMode;
-    if (dto.visibility !== undefined) job.visibility = dto.visibility as JobVisibility;
-    if (dto.application_deadline !== undefined) {
-      job.application_deadline = new Date(dto.application_deadline);
+    /* Build update payload, converting deadline string to Date if provided */
+    const updates: Record<string, any> = { ...dto };
+    if (updates.application_deadline) {
+      updates.application_deadline = new Date(updates.application_deadline);
     }
 
+    this.jobRepository.merge(job, updates);
     await this.jobRepository.save(job);
 
     return job;
@@ -332,20 +368,20 @@ export class JobService {
   private async autoCloseExpiredJobs(companyId?: string) {
     const now = new Date();
 
-    await this.jobRepository
+    const query = this.jobRepository
       .createQueryBuilder()
       .update(JobListing)
       .set({ status: JobStatus.CLOSED })
       .where('status = :status', { status: JobStatus.ACTIVE })
       .andWhere('application_deadline IS NOT NULL')
       .andWhere('application_deadline <= :now', { now })
-      .andWhere('deleted_at IS NULL')
-      .andWhere(
-        companyId
-          ? 'company_id = :companyId'
-          : '1=1',
-        { companyId },
-      )
-      .execute();
+      .andWhere('deleted_at IS NULL');
+
+    /* Scope to specific company if companyId provided */
+    if (companyId) {
+      query.andWhere('company_id = :companyId', { companyId });
+    }
+
+    await query.execute();
   }
 }

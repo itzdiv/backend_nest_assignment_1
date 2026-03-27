@@ -16,15 +16,6 @@ import { User } from 'src/db/entities/user.entity';
 import { CompanyMember } from 'src/db/entities/company-member.entity';
 
 export interface AuthenticatedRequest extends Request {
-  /*
-    User entity attached by JwtAuthGuard after
-    verifying the JWT token and fetching from DB.
-  */
   user: User;
-
-  /*
-    CompanyMember entity attached by CompanyMembershipGuard
-    after verifying the user belongs to the company.
-  */
   membership?: CompanyMember;
 }

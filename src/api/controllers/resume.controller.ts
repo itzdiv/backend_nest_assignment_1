@@ -1,21 +1,5 @@
-/*
-  Resume Controller.
+// Resume Controller — upload, list, download, set primary, delete.
 
-  Handles HTTP requests for resume management.
-  All routes scoped under /api/v1/candidate/resumes.
-
-  These endpoints are user-scoped (not company-scoped).
-  Only JwtAuthGuard is needed — no company membership required.
-*/
-
-/*
-  NestJS decorators:
-  @Controller — registers route handler with base path.
-  @Post, @Get, @Patch, @Delete — HTTP method decorators.
-  @UseGuards — applies guard middleware.
-  @Body, @Param, @Query — parameter extraction decorators.
-  @Req — injects raw Express request for user access.
-*/
 import {
   Controller,
   Post,
@@ -27,72 +11,76 @@ import {
   Query,
   UseGuards,
   Req,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
-
-/* Service containing resume business logic */
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ResumeService } from '../services/resume.service';
-
-/* JWT guard — ensures the user is authenticated */
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
-
-/* Zod validation pipe */
 import { ZodValidationPipe } from '../pipes/zod-validation.pipe';
-
-/* Zod schemas — runtime values used by ZodValidationPipe */
-import { CreateResumeSchema } from 'src/zod/candidate.zod';
 import { PaginationSchema } from 'src/zod/pagination.zod';
-
-/* DTO types — type-only imports (required by isolatedModules + emitDecoratorMetadata) */
-import type { CreateResumeDto } from 'src/zod/candidate.zod';
 import type { PaginationDto } from 'src/zod/pagination.zod';
 
-/*
-  Route: /api/v1/candidate/resumes
-  Resume endpoints are user-scoped.
-*/
 @Controller('v1/candidate/resumes')
 export class ResumeController {
   constructor(private readonly resumeService: ResumeService) {}
 
-  /*
-    POST /api/v1/candidate/resumes
-    Upload a new resume.
-    If is_primary = true, all other resumes are demoted.
-  */
+  // POST /api/v1/candidate/resumes — multipart upload
   @UseGuards(JwtAuthGuard)
   @Post()
+  @UseInterceptors(FileInterceptor('file'))
   async create(
     @Req() req,
-    @Body(new ZodValidationPipe(CreateResumeSchema))
-    body: CreateResumeDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { title?: string; is_primary?: string },
   ) {
-    return this.resumeService.create(req.user.id, body);
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const isPrimary = body.is_primary === 'true';
+    return this.resumeService.create(req.user.id, file, body.title, isPrimary);
   }
 
-  /*
-    GET /api/v1/candidate/resumes
-    List all resumes for the authenticated user.
-    Supports pagination via ?page=1&limit=10.
-  */
+  // GET /api/v1/candidate/resumes — paginated list
   @UseGuards(JwtAuthGuard)
   @Get()
   async findAll(
     @Req() req,
-    @Query(new ZodValidationPipe(PaginationSchema))
-    query: PaginationDto,
+    @Query(new ZodValidationPipe(PaginationSchema)) query: PaginationDto,
   ) {
-    return this.resumeService.findAll(
-      req.user.id,
-      query.page,
-      query.limit,
-    );
+    return this.resumeService.findAll(req.user.id, query.page, query.limit);
   }
 
-  /*
-    PATCH /api/v1/candidate/resumes/:resumeId/primary
-    Set a specific resume as the primary one.
-    All other resumes for the user are demoted.
-  */
+  // GET /api/v1/candidate/resumes/:resumeId/download — signed URL (15 min)
+  @UseGuards(JwtAuthGuard)
+  @Get(':resumeId/download')
+  async download(
+    @Req() req,
+    @Param('resumeId') resumeId: string,
+  ) {
+    const resume = await this.resumeService.findOneByUserAndId(
+      req.user.id,
+      resumeId,
+    );
+
+    if (!resume) {
+      throw new NotFoundException('Resume not found');
+    }
+
+    const signedUrl = await this.resumeService.getDownloadUrl(resume.storage_key);
+
+    return {
+      download_url: signedUrl,
+      filename: resume.original_filename,
+      mime_type: resume.mime_type,
+      expires_in: 900,
+    };
+  }
+
+  // PATCH /api/v1/candidate/resumes/:resumeId/primary
   @UseGuards(JwtAuthGuard)
   @Patch(':resumeId/primary')
   async setPrimary(
@@ -102,11 +90,7 @@ export class ResumeController {
     return this.resumeService.setPrimary(req.user.id, resumeId);
   }
 
-  /*
-    DELETE /api/v1/candidate/resumes/:resumeId
-    Delete a resume.
-    Validates ownership before deletion.
-  */
+  // DELETE /api/v1/candidate/resumes/:resumeId
   @UseGuards(JwtAuthGuard)
   @Delete(':resumeId')
   async delete(

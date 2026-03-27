@@ -131,8 +131,8 @@ export class QuestionBankService {
   ) {
     const qb = await this.findOne(companyId, qbId);
 
-    /* Merge incoming fields into existing entity */
-    Object.assign(qb, dto);
+    /* Use TypeORM's merge() to update entity fields */
+    this.qbRepository.merge(qb, dto);
 
     await this.qbRepository.save(qb);
 

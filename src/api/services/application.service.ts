@@ -46,13 +46,16 @@ import { JobApplication } from 'src/db/entities/job-application.entity';
 import { JobListing } from 'src/db/entities/job-listing.entity';
 import { Resume } from 'src/db/entities/resume.entity';
 import { ApplicationComment } from 'src/db/entities/application-comment.entity';
+import {
+  NotificationType,
+} from 'src/notifications/notification.entity';
+import { NotificationsService } from 'src/notifications/notifications.service';
 
 /* Enums matching PostgreSQL ENUM types */
 import { ApplicationStatus, JobStatus } from 'src/db/enums';
 
 /* Zod DTO types */
-import { CreateApplicationDto } from 'src/zod/application.zod';
-import { CreateCommentDto } from 'src/zod/application.zod';
+import { CreateApplicationDto, CreateCommentDto } from 'src/zod/application.zod';
 
 /* Pagination helper */
 import { paginate } from 'src/libs/pagination';
@@ -78,6 +81,8 @@ export class ApplicationService {
 
     /* DataSource for transactional operations */
     private readonly dataSource: DataSource,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /*
@@ -160,8 +165,8 @@ export class ApplicationService {
         company: { id: job.company.id } as any, // denormalized company_id
         user: { id: userId } as any,
         resume: { id: dto.resume_id } as any,
-        answers_json: dto.answers_json || undefined,
-        video_url: dto.video_url || undefined,
+        answers_json: dto.answers_json,
+        video_url: dto.video_url,
         status: ApplicationStatus.APPLIED,
       });
 
@@ -268,13 +273,12 @@ export class ApplicationService {
         title: app.job?.title,
         company_name: app.job?.company?.name,
       },
-      comments: (app.comments || [])
-        .map((c) => ({
-          id: c.id,
-          comment: c.comment,
-          visible_to_candidate: c.visible_to_candidate,
-          created_at: c.created_at,
-        })),
+      comments: (app.comments || []).map((c) => ({
+        id: c.id,
+        comment: c.comment,
+        visible_to_candidate: c.visible_to_candidate,
+        created_at: c.created_at,
+      })),
     }));
 
     return paginate(data, total, page, limit);
@@ -318,7 +322,7 @@ export class ApplicationService {
       updated_at: app.updated_at,
       candidate_email: app.user?.email,
       job_title: app.job?.title,
-      resume_url: app.resume?.file_url,
+      resume_url: app.resume?.storage_key,
       comments_count: app.comments?.length || 0,
     }));
 
@@ -345,6 +349,7 @@ export class ApplicationService {
         id: applicationId,
         company: { id: companyId },
       },
+      relations: ['job', 'company', 'user'],
     });
 
     if (!application) {
@@ -361,6 +366,34 @@ export class ApplicationService {
     application.status_changed_by = { id: changedBy } as any;
 
     await this.applicationRepository.save(application);
+
+    const notificationType =
+      status === ApplicationStatus.ACCEPTED
+        ? NotificationType.APPLICATION_ACCEPTED
+        : status === ApplicationStatus.REJECTED
+          ? NotificationType.APPLICATION_REJECTED
+          : null;
+
+    if (notificationType) {
+      const jobTitle = application.job?.title ?? 'this job';
+      const companyName = application.company?.name ?? 'the company';
+      const message =
+        notificationType === NotificationType.APPLICATION_ACCEPTED
+          ? `Congratulations! Your application for "${jobTitle}" at ${companyName} was accepted.`
+          : `Your application for "${jobTitle}" at ${companyName} was not selected.`;
+
+      try {
+        await this.notificationsService.create({
+          userId: application.user.id,
+          type: notificationType,
+          message,
+          applicationId: application.id,
+          jobTitle: application.job?.title,
+          companyName: application.company?.name,
+        });
+      } catch {
+      }
+    }
 
     return {
       id: application.id,
@@ -390,6 +423,7 @@ export class ApplicationService {
         id: applicationId,
         company: { id: companyId },
       },
+      relations: ['job', 'company', 'user'],
     });
 
     if (!application) {
@@ -406,6 +440,23 @@ export class ApplicationService {
     });
 
     await this.commentRepository.save(comment);
+
+    if (dto.visible_to_candidate) {
+      const jobTitle = application.job?.title ?? 'this job';
+      const companyName = application.company?.name ?? 'the company';
+
+      try {
+        await this.notificationsService.create({
+          userId: application.user.id,
+          type: NotificationType.APPLICATION_COMMENT,
+          message: `You have new feedback on your application for "${jobTitle}" at ${companyName}.`,
+          applicationId: application.id,
+          jobTitle: application.job?.title,
+          companyName: application.company?.name,
+        });
+      } catch {
+      }
+    }
 
     return {
       id: comment.id,
@@ -439,5 +490,82 @@ export class ApplicationService {
       user_email: c.user?.email,
       created_at: c.created_at,
     }));
+  }
+
+  /*
+    getApplicationDetail — fetches a single application with full detail,
+    including the job's screening_questions_json so the frontend can
+    render Q&A pairs alongside candidate answers.
+
+    @param companyId     — UUID of the company.
+    @param applicationId — UUID of the application.
+    @returns Full application detail including screening questions.
+    @throws NotFoundException if application not found or belongs to a different company.
+  */
+  async getApplicationDetail(companyId: string, applicationId: string) {
+    const application = await this.applicationRepository.findOne({
+      where: {
+        id: applicationId,
+        company: { id: companyId },
+      },
+      relations: ['job', 'user', 'user.candidateProfile', 'resume'],
+    });
+
+    if (!application) {
+      throw new NotFoundException('Application not found');
+    }
+
+    return {
+      id: application.id,
+      status: application.status,
+      answers_json: application.answers_json,
+      video_url: application.video_url ?? null,
+      created_at: application.created_at,
+      updated_at: application.updated_at,
+      candidate_email: application.user?.email ?? null,
+      candidate_name: application.user?.candidateProfile?.full_name ?? null,
+      candidate_linkedin_url: application.user?.candidateProfile?.linkedin_url ?? null,
+      candidate_portfolio_url: application.user?.candidateProfile?.portfolio_url ?? null,
+      candidate_phone: application.user?.candidateProfile?.phone ?? null,
+      job_title: application.job?.title ?? null,
+      job_id: application.job?.id ?? null,
+      resume_url: application.resume?.storage_key ?? null,
+      application_mode: application.job?.application_mode ?? null,
+      screening_questions_json: application.job?.screening_questions_json ?? null,
+    };
+  }
+
+  /*
+    getApplicationResume — fetches the resume attached to an application.
+
+    Validates the application belongs to the given company.
+    Returns the resume entity with its storage_key so the
+    controller can generate a signed download URL.
+
+    @param companyId     — UUID of the company.
+    @param applicationId — UUID of the application.
+    @returns Resume entity.
+    @throws NotFoundException if application or resume not found.
+  */
+  async getApplicationResume(companyId: string, applicationId: string) {
+    const application = await this.applicationRepository.findOne({
+      where: {
+        id: applicationId,
+        company: { id: companyId },
+      },
+      relations: ['resume'],
+    });
+
+    if (!application) {
+      throw new NotFoundException('Application not found');
+    }
+
+    if (!application.resume) {
+      throw new NotFoundException(
+        'No resume attached to this application',
+      );
+    }
+
+    return application.resume;
   }
 }

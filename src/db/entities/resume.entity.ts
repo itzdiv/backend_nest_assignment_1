@@ -1,57 +1,30 @@
-// src/db/entities/resume.entity.ts
-
-import {
-  Entity,
-  Column,
-  ManyToOne,
-  JoinColumn,
-  Index,
-} from 'typeorm';
-
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from '../base.entity';
 import { User } from './user.entity';
 
-/*
-  resumes table
-*/
 @Entity({ name: 'resumes' })
 export class Resume extends BaseEntity {
-
-  /*
-    Many resumes belong to ONE user.
-
-    So this is ManyToOne.
-  */
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
-  @Index() // heavily filtered field
+  @Index()
   user: User;
 
-  /*
-    title VARCHAR(255)
-  */
-  @Column({
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   title: string;
 
-  /*
-    file_url TEXT NOT NULL
-  */
-  @Column({
-    type: 'text',
-    nullable: false,
-  })
-  file_url: string;
+  // Internal path in Supabase Storage bucket (e.g. "user-uuid/file-uuid.pdf")
+  @Column({ type: 'text', nullable: false })
+  storage_key: string;
 
-  /*
-    is_primary BOOLEAN DEFAULT false
-  */
-  @Column({
-    type: 'boolean',
-    default: false,
-  })
+  @Column({ type: 'varchar', length: 255, nullable: false })
+  original_filename: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: false })
+  mime_type: string;
+
+  @Column({ type: 'int', nullable: false })
+  file_size_bytes: number;
+
+  @Column({ type: 'boolean', default: false })
   is_primary: boolean;
 }
